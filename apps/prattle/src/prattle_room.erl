@@ -8,7 +8,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start/1, start_link/1, stop/1]).
+-export([start_link/1, stop/1]).
 
 -export([code_change/3,
          handle_call/3,
@@ -17,23 +17,62 @@
          init/1,
          terminate/2]).
 
--record(state, {dummy}).
+-export([client/3]).
 
-start(Name) -> io:format("Chat room status"), timer:sleep(500), start(Name).
-
-stop(Name) -> gen_server:call(Name, stop).
+-record(state, {socket, port, clients}).
 
 start_link(Name) ->
     gen_server:start_link({local, Name}, ?MODULE, [], []).
 
-init(_Args) -> {ok, #state{dummy = 1}}.
+% connect
+% leave
+% msg
+init(_Args) ->
+    {ok, ListenSocket} = gen_tcp:listen(0,
+                                        [binary, {active, true}]),
+    {ok, Port} = inet:port(ListenSocket),
+    io:format("Listening on ~w ~n", [Port]),
+    gen_server:cast(self(), accept),
+    {ok,
+     #state{socket = ListenSocket, port = Port,
+            clients = []}}.
 
-handle_call(stop, _From, State) ->
-    {stop, normal, stopped, State};
-handle_call(_Request, _From, State) ->
-    {reply, ok, State}.
+stop(_Args) -> ok.
 
-handle_cast(_Msg, State) -> {noreply, State}.
+handle_call(stop, _From, State) -> {noreply, State}.
+
+handle_cast(accept,
+            State = #state{socket = ListenSocket, port = Port}) ->
+    io:format("Awaiting client connections: ~n"),
+    {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
+    io:format("Client connection received ~n"),
+    receive
+        {tcp, AcceptSocket, <<"connect:", Name/binary>>} ->
+            connect_client(Name, AcceptSocket),
+            gen_server:cast(self, accept);
+        _ ->
+            gen_tcp:close(AcceptSocket),
+            gen_server:cast(self, accept)
+    end,
+    {noreply, State}.
+
+connect_client(Name, AcceptSocket) ->
+    Pid = spawn_link(?MODULE,
+                     client,
+                     [Name, AcceptSocket, self()]),
+    gen_tcp:send(AcceptSocket,
+                 io_lib:format("Welcome to room: ~s ~n", [Name])),
+    gen_tcp:controlling_process(AcceptSocket, Pid).
+
+client(Name, Socket, Room) ->
+    receive
+        {tcp, Socket, <<"msg:", Message/binary>>} ->
+            gen_tcp:send(Socket, Message);
+        {tcp, _, Message} ->
+            io:format("Received unrecognized command ~s ~n",
+                      [binary_to_list(Message)])
+    end,
+    client(Name, Socket, Room).
 
 handle_info(_Info, State) -> {noreply, State}.
 
