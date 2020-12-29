@@ -8,7 +8,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, stop/1]).
+-export([start_link/1]).
 
 -export([code_change/3,
          handle_call/3,
@@ -17,65 +17,80 @@
          init/1,
          terminate/2]).
 
--export([client/3]).
+-export([client/2]).
 
 -record(state, {socket, port, clients}).
 
 start_link(Name) ->
-    gen_server:start_link({local, Name}, ?MODULE, [], []).
+    {ok, Pid} = gen_server:start_link({local, Name},
+                                      ?MODULE,
+                                      [],
+                                      []),
+    gen_server:cast(Pid, spawn_client),
+    io:format("Awaiting client connections: ~n").
 
-% connect
-% leave
-% msg
 init(_Args) ->
+    process_flag(trap_exit, true),
     {ok, ListenSocket} = gen_tcp:listen(0,
                                         [binary, {active, true}]),
     {ok, Port} = inet:port(ListenSocket),
     io:format("Listening on ~w ~n", [Port]),
-    gen_server:cast(self(), accept),
     {ok,
      #state{socket = ListenSocket, port = Port,
             clients = []}}.
 
-stop(_Args) -> ok.
+handle_call(_Req, _From, _State) -> {noreply, _State}.
 
-handle_call(stop, _From, State) -> {noreply, State}.
+handle_cast({broadcast, Message},
+            State = #state{clients = Clients}) ->
+    lists:foreach(fun (Client) ->
+                          Client ! {broadcast, Message}
+                  end,
+                  Clients),
+    {noreply, State};
+handle_cast(spawn_client,
+            State = #state{socket = ListenSocket,
+                           clients = Clients}) ->
+    Client = spawn_client(self(), ListenSocket),
+    NewClients = [Client | Clients],
+    {noreply, State#state{clients = NewClients}}.
 
-handle_cast(accept,
-            State = #state{socket = ListenSocket, port = Port}) ->
-    io:format("Awaiting client connections: ~n"),
-    {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
-    io:format("Client connection received ~n"),
-    receive
-        {tcp, AcceptSocket, <<"connect:", Name/binary>>} ->
-            connect_client(Name, AcceptSocket),
-            gen_server:cast(self, accept);
-        _ ->
-            gen_tcp:close(AcceptSocket),
-            gen_server:cast(self, accept)
-    end,
-    {noreply, State}.
-
-connect_client(Name, AcceptSocket) ->
-    Pid = spawn_link(?MODULE,
-                     client,
-                     [Name, AcceptSocket, self()]),
-    gen_tcp:send(AcceptSocket,
-                 io_lib:format("Welcome to room: ~s ~n", [Name])),
-    gen_tcp:controlling_process(AcceptSocket, Pid).
-
-client(Name, Socket, Room) ->
-    receive
-        {tcp, Socket, <<"msg:", Message/binary>>} ->
-            gen_tcp:send(Socket, Message);
-        {tcp, _, Message} ->
-            io:format("Received unrecognized command ~s ~n",
-                      [binary_to_list(Message)])
-    end,
-    client(Name, Socket, Room).
-
-handle_info(_Info, State) -> {noreply, State}.
+handle_info({'EXIT', From, _},
+            State = #state{clients = Clients}) ->
+    erlang:display(Clients),
+    NewClients = lists:filter(fun (Client) ->
+                                      Client =/= From
+                              end,
+                              Clients),
+    NewState = State#state{clients = NewClients},
+    {noreply, NewState}.
 
 terminate(_Reason, _State) -> ok.
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
+
+spawn_client(RoomPid, ListenSocket) ->
+    spawn_link(?MODULE, client, [RoomPid, ListenSocket]).
+
+client(Room, ListenSocket) ->
+    {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
+    io:format("Client connection received ~n"),
+    gen_tcp:send(AcceptSocket,
+                 io_lib:format("Welcome to room: ~w ~n", [Room])),
+    gen_tcp:controlling_process(AcceptSocket, self()),
+    gen_server:cast(Room, spawn_client),
+    client_loop(self(), AcceptSocket, Room).
+
+client_loop(Name, Socket, Room) ->
+    receive
+        {tcp, Socket, <<"msg:", Message/binary>>} ->
+            Pid = pid_to_list(self()),
+            Broadcast = lists:merge([Pid, binary_to_list(Message)]),
+            gen_server:cast(Room,
+                            {broadcast, list_to_binary(Broadcast)});
+        {tcp, _, Message} ->
+            io:format("Received unrecognized command ~s ~n",
+                      [binary_to_list(Message)]);
+        {broadcast, Message} -> gen_tcp:send(Socket, Message)
+    end,
+    client_loop(Name, Socket, Room).
