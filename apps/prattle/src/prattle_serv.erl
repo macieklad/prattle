@@ -38,7 +38,7 @@ stop(_Args) -> gen_server:call(self(), stop).
 handle_call({room_port, Room}, _From, State) ->
     Port = room_port(Room),
     if Port == none -> {reply, create_room(Room), State};
-       true -> Port
+       true -> {reply, Port, State}
     end.
 
 handle_cast(listen,
@@ -78,10 +78,10 @@ room_port(Room) ->
 room_port(Room, []) -> none;
 room_port(Room, [Next | Rooms]) ->
     {_, Pid, _, _} = Next,
-    Pid = gen_server:call(Pid,
-                          {room_port, list_to_atom(Room)}),
-    if Pid == none -> room_port(Room, Rooms);
-       true -> Pid
+    Port = gen_server:call(Pid,
+                           {room_port, list_to_atom(Room)}),
+    if Port == none -> room_port(Room, Rooms);
+       true -> Port
     end.
 
 handle_info(_Info, State) -> {noreply, State}.

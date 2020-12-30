@@ -87,15 +87,22 @@ client(Room, ListenSocket) ->
                  io_lib:format("Welcome to room: ~w ~n", [Room])),
     gen_tcp:controlling_process(AcceptSocket, self()),
     gen_server:cast(Room, spawn_client),
-    client_loop(self(), AcceptSocket, Room).
+    client_loop(pid_to_list(self()), AcceptSocket, Room).
 
 client_loop(Name, Socket, Room) ->
     receive
         {tcp, Socket, <<"msg:", Message/binary>>} ->
-            Pid = pid_to_list(self()),
-            Broadcast = lists:merge([Pid, binary_to_list(Message)]),
+            Broadcast = Name ++ binary_to_list(Message),
             gen_server:cast(Room,
                             {broadcast, list_to_binary(Broadcast)});
+        {tcp, Socket, <<"name:", RawName/binary>>} ->
+            NewName = string:trim(binary_to_list(RawName)),
+            Message = "[SERVER] Client " ++
+                          "<" ++
+                              Name ++ "> changed name to " ++ NewName ++ "\r\n",
+            gen_server:cast(Room,
+                            {broadcast, list_to_binary(Message)}),
+            client_loop(NewName, Socket, Room);
         {tcp, _, Message} ->
             io:format("Received unrecognized command ~s ~n",
                       [binary_to_list(Message)]);
