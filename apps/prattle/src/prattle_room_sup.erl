@@ -13,7 +13,7 @@
 -export([init/1]).
 
 start_link() ->
-    io:format("Started prattle chat room supervisor ~n"),
+    io:format("[ROOM SUPERVISOR]: Started ~n"),
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init(_Args) ->

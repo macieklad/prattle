@@ -19,26 +19,34 @@
 
 -export([client/2]).
 
--record(state, {socket, port, clients}).
+-record(state, {socket, port, clients, name}).
 
 start_link(Name) ->
     {ok, Pid} = gen_server:start_link({local, Name},
                                       ?MODULE,
-                                      [],
+                                      [Name],
                                       []),
+    io:format("[ROOM:~s] PID is ~w ~n", [Name, Pid]),
     gen_server:cast(Pid, spawn_client),
-    io:format("Awaiting client connections: ~n").
+    io:format("[ROOM:~s] Awaiting client connections ~n",
+              [Name]),
+    {ok, Pid}.
 
-init(_Args) ->
+init([Name]) ->
     process_flag(trap_exit, true),
     {ok, ListenSocket} = gen_tcp:listen(0,
                                         [binary, {active, true}]),
     {ok, Port} = inet:port(ListenSocket),
-    io:format("Listening on ~w ~n", [Port]),
+    io:format("[ROOM:~s] Listening on ~w ~n", [Name, Port]),
     {ok,
-     #state{socket = ListenSocket, port = Port,
-            clients = []}}.
+     #state{socket = ListenSocket, port = Port, clients = [],
+            name = Name}}.
 
+handle_call({room_port, RequestedRoom}, _From,
+            State = #state{port = Port, name = Name}) ->
+    if RequestedRoom == Name -> {reply, Port, State};
+       true -> {reply, none, State}
+    end;
 handle_call(_Req, _From, _State) -> {noreply, _State}.
 
 handle_cast({broadcast, Message},

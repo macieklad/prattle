@@ -17,79 +17,72 @@
          init/1,
          terminate/2]).
 
--record(state, {socket, room_sup}).
+-export([listen/2]).
 
-start_link(Args) ->
-    gen_server:start_link(?MODULE, Args, []).
+-record(state, {socket}).
 
-init({Socket, RoomSup}) ->
-    gen_server:cast(self(), accept),
-    {ok, #state{socket = Socket, room_sup = RoomSup}}.
+start_link(ListenSocket) ->
+    io:format("[SERVER] starting prattle~n"),
+    {ok, Serv} = gen_server:start_link({local, ?MODULE},
+                                       ?MODULE,
+                                       [ListenSocket],
+                                       []),
+    gen_server:cast(Serv, listen),
+    {ok, Serv}.
 
-stop(Name) -> gen_server:call(Name, stop).
+init([ListenSocket]) ->
+    {ok, #state{socket = ListenSocket}}.
 
-handle_call(_E, _From, State) -> {noreply, State}.
+stop(_Args) -> gen_server:call(self(), stop).
 
-handle_cast(accept,
-            State = #state{socket = ListenSocket,
-                           room_sup = RoomSupervisor}) ->
-    run(ListenSocket, RoomSupervisor),
+handle_call({room_port, Room}, _From, State) ->
+    Port = room_port(Room),
+    if Port == none -> {reply, create_room(Room), State};
+       true -> Port
+    end.
+
+handle_cast(listen,
+            State = #state{socket = ListenSocket}) ->
+    spawn_link(?MODULE, listen, [self(), ListenSocket]),
+    io:format("[SERVER] Server listening, awaiting "
+              "on connections ~n"),
     {noreply, State}.
 
-run(ListenSocket, RoomSupervisor) ->
-    % Listen for messages or for single connection message
+listen(Server, ListenSocket) ->
     {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
-    inet:setopts(AcceptSocket, [{active, once}]),
-    listen(AcceptSocket, RoomSupervisor),
+
+    receive
+        {tcp, _, <<"join:", Room/binary>>} ->
+            RoomPort = gen_server:call(Server,
+                                       {room_port,
+                                        string:trim(binary_to_list(Room))}),
+            Message = "room:" ++ integer_to_list(RoomPort),
+            gen_tcp:send(AcceptSocket, list_to_binary(Message));
+        {tcp, _, _} ->
+            gen_tcp:send(AcceptSocket,
+                         "[ERROR] Invalid command sent. Use join:channe"
+                         "l, disconnecting ~n")
+    end,
     gen_tcp:close(AcceptSocket),
-    % Restart and wait for next connection
-    run(ListenSocket, RoomSupervisor).
+    listen(Server, ListenSocket).
 
-listen(AcceptSocket, RoomSupervisor) ->
-    receive
-        {tcp, AcceptSocket, <<"join", Name/binary>>} ->
-            Rooms = supervisor:which_children(RoomSupervisor),
-            Room = find_room(Name, Rooms),
-            case Room of
-                none ->
-                    create_room(Name, RoomSupervisor),
-                    join_room(Room, AcceptSocket);
-                _ -> join_room(Room, AcceptSocket)
-            end;
-        {room, change, {Source, Dest}} ->
-            Rooms = supervisor:which_children(RoomSupervisor),
-            Room = find_room(Dest, Rooms),
-            case Room of
-                none ->
-                    Room = create_room(Dest, RoomSupervisor),
-                    Source ! {info, room_port, get_port(Room)};
-                _ -> join_room(Room, AcceptSocket)
-            end
+create_room(Name) ->
+    {ok, Pid} = supervisor:start_child(prattle_room_sup,
+                                       [list_to_atom(Name)]),
+    gen_server:call(Pid, {room_port, list_to_atom(Name)}).
+
+room_port(Room) ->
+    Rooms = supervisor:which_children(prattle_room_sup),
+    room_port(Room, Rooms).
+
+room_port(Room, []) -> none;
+room_port(Room, [Next | Rooms]) ->
+    {_, Pid, _, _} = Next,
+    Pid = gen_server:call(Pid,
+                          {room_port, list_to_atom(Room)}),
+    if Pid == none -> room_port(Room, Rooms);
+       true -> Pid
     end.
-
-create_room(Name, RoomSupervisor) ->
-    {ok, Room} = supervisor:start_child(RoomSupervisor,
-                                        Name),
-    Room.
-
-join_room(Room, AcceptSocket) ->
-    Port = get_port(Room),
-    gen_tcp:send(AcceptSocket,
-                 <<"room_port", Port/binary>>).
-
-get_port(Room) ->
-    Room ! {request, port},
-    receive
-        {response, Port} -> Port;
-        _ -> get_port(Room)
-    end.
-
-find_room(K, [H | T]) ->
-    case H of
-        {K, Pid, _, _} -> Pid;
-        _ -> find_room(K, T)
-    end;
-find_room(_, []) -> none.
 
 handle_info(_Info, State) -> {noreply, State}.
 
