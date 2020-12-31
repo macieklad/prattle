@@ -17,7 +17,7 @@
          init/1,
          terminate/2]).
 
--export([listen/2]).
+-export([handle_connection/2, listen/2]).
 
 -record(state, {socket}).
 
@@ -43,33 +43,52 @@ handle_call({room_port, Room}, _From, State) ->
 
 handle_cast(listen,
             State = #state{socket = ListenSocket}) ->
-    spawn_link(?MODULE, listen, [self(), ListenSocket]),
+    listen(self(), ListenSocket),
     io:format("[SERVER] Server listening, awaiting "
               "on connections ~n"),
     {noreply, State}.
 
 listen(Server, ListenSocket) ->
-    {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
+    spawn_link(?MODULE,
+               handle_connection,
+               [Server, ListenSocket]).
 
+handle_connection(Server, ListenSocket) ->
+    {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
+    listen(Server, ListenSocket),
+    handle_messages(Server, AcceptSocket),
+    gen_tcp:close(AcceptSocket).
+
+handle_messages(Server, AcceptSocket) ->
     receive
         {tcp, _, <<"join:", Room/binary>>} ->
             RoomPort = gen_server:call(Server,
                                        {room_port,
                                         string:trim(binary_to_list(Room))}),
-            Message = "room:" ++ integer_to_list(RoomPort),
+            Message = "room_port:" ++ integer_to_list(RoomPort),
             gen_tcp:send(AcceptSocket, list_to_binary(Message));
-        {tcp, _, _} ->
+        {tcp, _, <<"room:list">>} ->
+            gen_tcp:send(AcceptSocket,
+                         list_to_binary("rooms:" ++ room_names())),
+            handle_messages(Server, AcceptSocket);
+        {tcp, _, Message} ->
+            erlang:display(Message),
             gen_tcp:send(AcceptSocket,
                          "[ERROR] Invalid command sent. Use join:channe"
-                         "l, disconnecting ~n")
-    end,
-    gen_tcp:close(AcceptSocket),
-    listen(Server, ListenSocket).
+                         "l, disconnecting")
+    end.
 
 create_room(Name) ->
     {ok, Pid} = supervisor:start_child(prattle_room_sup,
                                        [list_to_atom(Name)]),
     gen_server:call(Pid, {room_port, list_to_atom(Name)}).
+
+room_names() ->
+    Rooms = supervisor:which_children(prattle_room_sup),
+    lists:map(fun ({_, RoomPid, _, _}) ->
+                      atom_to_list(gen_server:call(RoomPid, name))
+              end,
+              Rooms).
 
 room_port(Room) ->
     Rooms = supervisor:which_children(prattle_room_sup),

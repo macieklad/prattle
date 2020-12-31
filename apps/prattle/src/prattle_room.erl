@@ -47,6 +47,8 @@ handle_call({room_port, RequestedRoom}, _From,
     if RequestedRoom == Name -> {reply, Port, State};
        true -> {reply, none, State}
     end;
+handle_call(name, _From, State = #state{name = Name}) ->
+    {reply, Name, State};
 handle_call(_Req, _From, _State) -> {noreply, _State}.
 
 handle_cast({broadcast, Message},
@@ -84,7 +86,7 @@ client(Room, ListenSocket) ->
     {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
     io:format("Client connection received ~n"),
     gen_tcp:send(AcceptSocket,
-                 io_lib:format("Welcome to room: ~w ~n", [Room])),
+                 io_lib:format("Welcome to room: ~w", [Room])),
     gen_tcp:controlling_process(AcceptSocket, self()),
     gen_server:cast(Room, spawn_client),
     client_loop(pid_to_list(self()), AcceptSocket, Room).
@@ -96,10 +98,10 @@ client_loop(Name, Socket, Room) ->
             gen_server:cast(Room,
                             {broadcast, list_to_binary(Broadcast)});
         {tcp, Socket, <<"name:", RawName/binary>>} ->
-            NewName = string:trim(binary_to_list(RawName)),
+            NewName = "<" ++
+                          string:trim(binary_to_list(RawName)) ++ ">",
             Message = "[SERVER] Client " ++
-                          "<" ++
-                              Name ++ "> changed name to " ++ NewName ++ "\r\n",
+                          Name ++ " changed name to " ++ NewName ++ "\r\n",
             gen_server:cast(Room,
                             {broadcast, list_to_binary(Message)}),
             client_loop(NewName, Socket, Room);
