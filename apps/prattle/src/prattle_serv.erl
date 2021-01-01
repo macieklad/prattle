@@ -22,7 +22,7 @@
 -record(state, {socket}).
 
 start_link() ->
-    io:format("[SERVER] starting prattle~n"),
+    log("Starting prattle"),
     {ok, ServerSocket} = gen_tcp:listen(8000,
                                         [{active, true}, binary]),
     {ok, Serv} = gen_server:start_link({local, ?MODULE},
@@ -44,9 +44,17 @@ handle_call({room_port, Room}, _From, State) ->
 handle_cast(listen,
             State = #state{socket = ListenSocket}) ->
     listen(self(), ListenSocket),
-    io:format("[SERVER] Server listening, awaiting "
-              "on connections ~n"),
+    log("Listening, awaiting on connections"),
     {noreply, State}.
+
+handle_info(_Info, State) -> {noreply, State}.
+
+terminate(_Reason,
+          State = #state{socket = ListenSocket}) ->
+    gen_tcp:close(ListenSocket),
+    {ok, State}.
+
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 listen(Server, ListenSocket) ->
     spawn_link(?MODULE,
@@ -69,13 +77,12 @@ handle_messages(Server, AcceptSocket) ->
             gen_tcp:send(AcceptSocket, list_to_binary(Message));
         {tcp, _, <<"room:list">>} ->
             gen_tcp:send(AcceptSocket,
-                         list_to_binary("rooms:" ++ room_names())),
+                         list_to_binary("rooms:" ++ "Rooms: " ++ room_names())),
             handle_messages(Server, AcceptSocket);
-        {tcp, _, Message} ->
-            erlang:display(Message),
+        {tcp, _, _} ->
             gen_tcp:send(AcceptSocket,
-                         "[ERROR] Invalid command sent. Use join:channe"
-                         "l, disconnecting")
+                         prattle_utils:system_message("Invalid command sent. Use join:channel "
+                                                      "or room:list"))
     end.
 
 create_room(Name) ->
@@ -103,11 +110,7 @@ room_port(Room, [Next | Rooms]) ->
        true -> Port
     end.
 
-handle_info(_Info, State) -> {noreply, State}.
+log(Message) -> log(Message, []).
 
-terminate(_Reason,
-          State = #state{socket = ListenSocket}) ->
-    gen_tcp:close(ListenSocket),
-    {ok, State}.
-
-code_change(_OldVsn, State, _Extra) -> {ok, State}.
+log(Message, Args) ->
+    io:format("[SERVER] " ++ Message ++ "~n", Args).

@@ -40,7 +40,7 @@ client_loop(Name, Socket, RoomName, RoomPid) ->
             Message = "Client " ++
                           Name ++ " changed name to " ++ NewName,
             gen_server:cast(RoomPid,
-                            {broadcast, system_message(Message)}),
+                            {broadcast, prattle_utils:system_message(Message)}),
             client_loop(NewName, Socket, RoomName, RoomPid);
         {tcp_closed, ClosedSocket}
             when Socket =:= ClosedSocket ->
@@ -65,7 +65,5 @@ send_message(To, String, Vars) ->
 
 send_system_message(To, String, Vars) ->
     gen_tcp:send(To,
-                 list_to_binary(io_lib:format(system_message(String),
+                 list_to_binary(io_lib:format(prattle_utils:system_message(String),
                                               Vars))).
-
-system_message(Message) -> "<<prattle>> " ++ Message.
