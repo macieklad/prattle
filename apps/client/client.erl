@@ -7,6 +7,7 @@
 start() -> start({{127, 0, 0, 1}, 8000}).
 
 start({ServerHost, ServerPort}) ->
+    timer:sleep(2000),
     store:start([{host, ServerHost}, {port, ServerPort}]),
     log("Welcome to prattle chat!"),
     log("Entering lobby, use join:room_name to "
