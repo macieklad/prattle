@@ -46,9 +46,10 @@ lobby(ServerSocket) ->
                                                                [binary,
                                                                 {active,
                                                                  true}]),
-                            log("Entering chat, type anything to send "
-                                "message, use name:YOUR_NAME to set nickname, "
-                                "and leave:room to go back to lobby"),
+                            log("Entering chat, type anything and press "
+                                "enter to send message, type name:YOUR_NAME "
+                                "to set nickname or leave:room to go "
+                                "back to lobby"),
                             chat(ChatSocket)
                     end;
                 ["room", "list"] ->
