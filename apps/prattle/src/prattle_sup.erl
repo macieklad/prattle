@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%% @doc Prattle top level supervisor.
+%% @doc Prattle top level supervisor, spawns server and room supervisor.
 %% @end
 %%%-------------------------------------------------------------------
 

@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%% @doc Chat room supervisor
+%% @doc Chat room supervisor, manages room creation and listing requests
 %% @end
 %%%-------------------------------------------------------------------
 

@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%% @doc Main prattle chat distribution hub
+%% @doc Main prattle server
 %% @end
 %%%-------------------------------------------------------------------
 
@@ -21,6 +21,9 @@
 
 -record(state, {socket}).
 
+%% First we will start the server, and cast the listen
+%% call on it to start listening for conections on
+%% a constant port.
 start_link({ServerPort}) ->
     log("Starting prattle on port ~w", [ServerPort]),
     {ok, ServerSocket} = gen_tcp:listen(ServerPort,
@@ -35,12 +38,16 @@ start_link({ServerPort}) ->
 init([ListenSocket]) ->
     {ok, #state{socket = ListenSocket}}.
 
+%% Clients will ask for room ports, if none is found new
+%% room is created and its port is returned.
 handle_call({room_port, Room}, _From, State) ->
     Port = room_port(Room),
     if Port == none -> {reply, create_room(Room), State};
        true -> {reply, Port, State}
     end.
 
+%% Listen request will come only once at the beggining of the
+%% app, we spawn connection handler for each lobby user.
 handle_cast(listen,
             State = #state{socket = ListenSocket}) ->
     listen(self(), ListenSocket),
@@ -49,6 +56,9 @@ handle_cast(listen,
 
 handle_info(_Info, State) -> {noreply, State}.
 
+%% If server shall terminate (because its supervisor will
+%% request that if app closes), we gracefully close
+%% the socket and free the underlying port.
 terminate(_Reason,
           State = #state{socket = ListenSocket}) ->
     gen_tcp:close(ListenSocket),
@@ -61,12 +71,23 @@ listen(Server, ListenSocket) ->
                handle_connection,
                [Server, ListenSocket]).
 
+%% Main connection handler, if someone connects, new
+%% handler will be spun up for future connections,
+%% and the current one enters the loop
+%% to handle incoming commands
 handle_connection(Server, ListenSocket) ->
     {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
     listen(Server, ListenSocket),
     handle_messages(Server, AcceptSocket),
     gen_tcp:close(AcceptSocket).
 
+%% Message handling loop, we are accepting binary
+%% strings from the sockets, parse them,
+%% and depnding on the command, request
+%% correct behaviour from the server.
+%%
+%% After the request is executed, response
+%% shall be sent to the client.
 handle_messages(Server, AcceptSocket) ->
     receive
         {tcp, _, <<"join:", Room/binary>>} ->
@@ -85,6 +106,9 @@ handle_messages(Server, AcceptSocket) ->
                                                       "or room:list"))
     end.
 
+%% We are not starting room proccesses manually,
+%% room supervisor does that for us. After
+%% room creation we return its port.
 create_room(Name) ->
     {ok, Pid} = supervisor:start_child(prattle_room_sup,
                                        [list_to_atom(Name)]),
@@ -97,10 +121,13 @@ room_names() ->
               end,
               Rooms).
 
+%% Get room list from supervisor and pass them down for search.
 room_port(Room) ->
     Rooms = supervisor:which_children(prattle_room_sup),
     room_port(Room, Rooms).
 
+%% We are iterating room list, and if any will return integer
+%% instead of "none" atom, we return it immediately.
 room_port(Room, []) -> none;
 room_port(Room, [Next | Rooms]) ->
     {_, Pid, _, _} = Next,
@@ -110,6 +137,7 @@ room_port(Room, [Next | Rooms]) ->
        true -> Port
     end.
 
+%% Helper utils
 log(Message) -> log(Message, []).
 
 log(Message, Args) ->
