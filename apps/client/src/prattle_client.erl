@@ -4,6 +4,9 @@
 
 -export([prompt/1, strip_tokens/2]).
 
+%% First we will start the client with user provided or default args.
+%% Client will start configuration store and prompt proccesses,
+%% and then will try to connect to server and enter lobby.
 start() -> start({{127, 0, 0, 1}, 8000}).
 
 start({ServerHost, ServerPort}) ->
@@ -19,22 +22,37 @@ start({ServerHost, ServerPort}) ->
     register(prompt, spawn_link(client, prompt, [self()])),
     lobby(connect()).
 
+%% When we terminate the client, we make sure to kill
+%% dangling store and prompt proccessses.
 stop() ->
     log("Stopping prattle client, bye!"),
     exit(whereis(prompt), kill),
     exit(whereis(store_instance), kill),
     exit(normal).
 
+%% Simple prompt process, it will accept user input
+%% and pass it to main client loop, we use sleep
+%% to rate limit the prompt, just in case.
 prompt(Client) ->
     timer:sleep(100),
     Prompt = io:get_line(">>"),
     Client ! {prompt, Prompt},
     prompt(Client).
 
+%% See architecture section in readme to know what happens
+%% after we connect to lobby, internal comments will
+%% explain special fragments of code.
 lobby(ServerSocket) ->
     receive
+        %% If user will send input, react to it
         {prompt, Content} ->
+            %% We use colons across the app to split command name and arguments
+            %% strip_tokens helper will ensure that no whitespace is included
+            %% in command parts after the splitting is done.
             case strip_tokens(Content, ":") of
+                %% User requested room join, ask server for room port,
+                %% and estabilish connection with it. If everything
+                %% is fine, start the chatroom loop.
                 ["join", Room] ->
                     send(ServerSocket, "join:" ++ Room),
                     receive
@@ -52,6 +70,8 @@ lobby(ServerSocket) ->
                                 "back to lobby"),
                             chat(ChatSocket)
                     end;
+                %% User requested room list, ask server for the response,
+                %% and stay in lobby, as room join was not requested.
                 ["room", "list"] ->
                     send(ServerSocket, "room:list"),
                     receive
@@ -60,26 +80,36 @@ lobby(ServerSocket) ->
                             lobby(ServerSocket);
                         Message -> erlang:display(Message)
                     end;
+                %% User requested app leave, so we terminate the app
+                %% and close the port to clean up.
                 ["prattle", "leave"] ->
                     gen_tcp:close(ServerSocket),
                     stop();
+                %% Catch all handler for bad commands
                 _Else ->
                     log("Invalid command ~s provided", [Content]),
                     lobby(ServerSocket)
             end;
+        %% Server shouldn't send bad responses
         {tcp, _From, Response} ->
             log("Received unrecognized response: ~w", [Response]),
             lobby(ServerSocket);
+        %% Server may terminate for some reason, so we reconnect
         {tcp_closed, _} ->
             log("Server closed connection, reentering "
                 "lobby"),
             lobby(connect());
+        %% Other messages shouldn't come here.
         Message ->
             log("Received unrecognized client message ~w",
                 [Message]),
             lobby(ServerSocket)
     end.
 
+%% Commands are handled the same way as in the lobby room,
+%% sockets are in binary mode, so we match against
+%% binary string and cast them to lists whenever
+%% needed to use the messages.
 chat(Socket) ->
     receive
         {prompt, Content} ->
@@ -95,8 +125,11 @@ chat(Socket) ->
                     chat(Socket)
             end;
         {tcp, _, <<Response/binary>>} ->
+            %% Responses shouldn't go through log function,
+            %% as they are raw strings to be displayed
             io:format(binary_to_list(Response)),
             chat(Socket);
+        %% If the room will close by some reason, we fall back to lobby
         {tcp_closed, ClosedSocket} ->
             if Socket =:= ClosedSocket ->
                    log("Connection to room closed, going back "
@@ -110,6 +143,14 @@ chat(Socket) ->
     end,
     lobby(connect()).
 
+%% Tcp connections may fail, in case of rooms we (with hope) assume that they exist
+%% and work well, but while first connecting to server we would rather try
+%% that the connection is estabilished, and that is done here.
+%% Client will retry connections every 5 seconds.
+%%
+%% Whole point of external configuration store is seen here, as the connect function
+%% is used in a lot of places, so passing configuration would be a hassle,
+%% so we use external proccess for that.
 connect() ->
     ServerHost = store:take(host),
     ServerPort = store:take(port),
@@ -128,6 +169,7 @@ connect() ->
             connect()
     end.
 
+%% Helper functions to abstract repeatable tasks.
 log(Message) -> log(Message, []).
 
 log(Message, Args) ->
