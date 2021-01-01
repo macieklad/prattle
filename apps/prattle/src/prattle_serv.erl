@@ -86,7 +86,7 @@ create_room(Name) ->
 room_names() ->
     Rooms = supervisor:which_children(prattle_room_sup),
     lists:map(fun ({_, RoomPid, _, _}) ->
-                      atom_to_list(gen_server:call(RoomPid, name))
+                      atom_to_list(gen_server:call(RoomPid, name)) ++ " "
               end,
               Rooms).
 

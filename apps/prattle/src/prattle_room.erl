@@ -17,7 +17,7 @@
          init/1,
          terminate/2]).
 
--export([client/2]).
+-export([log/2, log/3]).
 
 -record(state, {socket, port, clients, name}).
 
@@ -26,10 +26,9 @@ start_link(Name) ->
                                       ?MODULE,
                                       [Name],
                                       []),
-    io:format("[ROOM:~s] PID is ~w ~n", [Name, Pid]),
+    log("PID is ~w", Name, [Pid]),
     gen_server:cast(Pid, spawn_client),
-    io:format("[ROOM:~s] Awaiting client connections ~n",
-              [Name]),
+    log("Awaiting client connections", Name),
     {ok, Pid}.
 
 init([Name]) ->
@@ -37,7 +36,7 @@ init([Name]) ->
     {ok, ListenSocket} = gen_tcp:listen(0,
                                         [binary, {active, true}]),
     {ok, Port} = inet:port(ListenSocket),
-    io:format("[ROOM:~s] Listening on ~w ~n", [Name, Port]),
+    log("Listening on ~w", Name, [Port]),
     {ok,
      #state{socket = ListenSocket, port = Port, clients = [],
             name = Name}}.
@@ -59,55 +58,41 @@ handle_cast({broadcast, Message},
                   Clients),
     {noreply, State};
 handle_cast(spawn_client,
-            State = #state{socket = ListenSocket,
-                           clients = Clients}) ->
-    Client = spawn_client(self(), ListenSocket),
+            State = #state{socket = ListenSocket, name = Name}) ->
+    spawn_client(Name, self(), ListenSocket),
+    {noreply, State};
+handle_cast({client_connection, Client},
+            State = #state{clients = Clients}) ->
     NewClients = [Client | Clients],
     {noreply, State#state{clients = NewClients}}.
 
 handle_info({'EXIT', From, _},
-            State = #state{clients = Clients}) ->
-    erlang:display(Clients),
+            State = #state{clients = Clients, name = Name}) ->
     NewClients = lists:filter(fun (Client) ->
                                       Client =/= From
                               end,
                               Clients),
     NewState = State#state{clients = NewClients},
+    if NewClients =:= [] ->
+           log("Last client left the room, shutting "
+               "it down",
+               Name),
+           exit(normal);
+       true -> ok
+    end,
     {noreply, NewState}.
 
 terminate(_Reason, _State) -> ok.
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-spawn_client(RoomPid, ListenSocket) ->
-    spawn_link(?MODULE, client, [RoomPid, ListenSocket]).
+spawn_client(RoomName, RoomPid, ListenSocket) ->
+    prattle_client_conn:spawn(RoomName,
+                              RoomPid,
+                              ListenSocket).
 
-client(Room, ListenSocket) ->
-    {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
-    io:format("Client connection received ~n"),
-    gen_tcp:send(AcceptSocket,
-                 io_lib:format("Welcome to room: ~w", [Room])),
-    gen_tcp:controlling_process(AcceptSocket, self()),
-    gen_server:cast(Room, spawn_client),
-    client_loop(pid_to_list(self()), AcceptSocket, Room).
+log(Message, Room) -> log(Message, Room, []).
 
-client_loop(Name, Socket, Room) ->
-    receive
-        {tcp, Socket, <<"msg:", Message/binary>>} ->
-            Broadcast = Name ++ binary_to_list(Message),
-            gen_server:cast(Room,
-                            {broadcast, list_to_binary(Broadcast)});
-        {tcp, Socket, <<"name:", RawName/binary>>} ->
-            NewName = "<" ++
-                          string:trim(binary_to_list(RawName)) ++ ">",
-            Message = "[SERVER] Client " ++
-                          Name ++ " changed name to " ++ NewName ++ "\r\n",
-            gen_server:cast(Room,
-                            {broadcast, list_to_binary(Message)}),
-            client_loop(NewName, Socket, Room);
-        {tcp, _, Message} ->
-            io:format("Received unrecognized command ~s ~n",
-                      [binary_to_list(Message)]);
-        {broadcast, Message} -> gen_tcp:send(Socket, Message)
-    end,
-    client_loop(Name, Socket, Room).
+log(Message, Room, Args) ->
+    io:format("[ROOM:~s] " ++ string:trim(Message) ++ "~n",
+              [Room] ++ Args).

@@ -68,7 +68,7 @@ lobby(ServerSocket) ->
                     end;
                 ["prattle", "leave"] ->
                     gen_tcp:close(ServerSocket),
-                    exit(0);
+                    exit(normal);
                 _Else ->
                     log("Invalid command ~s provided", [Content]),
                     lobby(ServerSocket)
@@ -86,7 +86,9 @@ chat(Socket) ->
     receive
         {prompt, Content} ->
             case strip_tokens(Content, ":") of
-                ["leave", "room"] -> gen_tcp:close(Socket);
+                ["leave", "room"] ->
+                    log("Room left, going back to lobby"),
+                    gen_tcp:close(Socket);
                 ["name", Name] ->
                     send(Socket, "name:" ++ Name),
                     chat(Socket);
@@ -95,12 +97,12 @@ chat(Socket) ->
                     chat(Socket)
             end;
         {tcp, _, <<Response/binary>>} ->
-            io:format(binary_to_list(Response) ++ "~n"),
+            io:format(binary_to_list(Response)),
             chat(Socket);
         {tcp_closed, ClosedSocket} ->
-            if Socket == ClosedSocket ->
+            if Socket =:= ClosedSocket ->
                    log("Connection to room closed, leaving channel");
-               true -> chat(socket)
+               true -> chat(Socket)
             end;
         Message ->
             log("Chat received unrecognized client message ~w",
