@@ -1,4 +1,4 @@
--module(client).
+-module(prattle_client).
 
 -export([start/0, start/1, stop/0]).
 
@@ -7,8 +7,8 @@
 start() -> start({{127, 0, 0, 1}, 8000}).
 
 start({ServerHost, ServerPort}) ->
-    timer:sleep(2000),
-    store:start([{host, ServerHost}, {port, ServerPort}]),
+    prattle_store:start([{host, ServerHost},
+                         {port, ServerPort}]),
     log("Welcome to prattle chat!"),
     log("Entering lobby, use join:room_name to "
         "join or create chat room."),
@@ -66,6 +66,10 @@ lobby(ServerSocket) ->
         {tcp, _From, Response} ->
             log("Received unrecognized response: ~w", [Response]),
             lobby(ServerSocket);
+        {tcp_closed, _} ->
+            log("Server closed connection, reentering "
+                "lobby"),
+            lobby(connect());
         Message ->
             log("Received unrecognized client message ~w",
                 [Message]),
@@ -108,7 +112,9 @@ connect() ->
                            ServerPort,
                            [binary, {active, true}]),
     case Conn of
-        {ok, ServerSocket} -> ServerSocket;
+        {ok, ServerSocket} ->
+            log("Connected to lobby."),
+            ServerSocket;
         {error, Reason} ->
             log("Could not connect to main chat server: ~s",
                 [Reason]),

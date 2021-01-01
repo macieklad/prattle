@@ -1,11 +1,11 @@
--module(store).
+-module(prattle_store).
 
 -export([start/1]).
 
 -export([put/2, run/1, take/1]).
 
 start(StateList) ->
-    Pid = spawn_link(store,
+    Pid = spawn_link(?MODULE,
                      run,
                      [dict:from_list(StateList)]),
     register(store_instance, Pid).

@@ -7,10 +7,13 @@
 
 -behaviour(application).
 
--export([start/2, stop/1]).
+-export([start/0, start/1, start/2, stop/1]).
 
-start(_StartType, _StartArgs) ->
-    prattle_sup:start_link().
+start() -> prattle_sup:start_link({8000}).
+
+start(Args) -> prattle_sup:start_link(Args).
+
+start(_StartType, Args) -> prattle_sup:start_link(Args).
 
 stop(_State) -> ok.
 

@@ -8,7 +8,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
+-export([start_link/1]).
 
 -export([code_change/3,
          handle_call/3,
@@ -21,9 +21,9 @@
 
 -record(state, {socket}).
 
-start_link() ->
-    log("Starting prattle"),
-    {ok, ServerSocket} = gen_tcp:listen(8000,
+start_link({ServerPort}) ->
+    log("Starting prattle on port ~w", [ServerPort]),
+    {ok, ServerSocket} = gen_tcp:listen(ServerPort,
                                         [{active, true}, binary]),
     {ok, Serv} = gen_server:start_link({local, ?MODULE},
                                        ?MODULE,
