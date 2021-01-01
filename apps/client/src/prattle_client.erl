@@ -46,6 +46,9 @@ lobby(ServerSocket) ->
                                                                [binary,
                                                                 {active,
                                                                  true}]),
+                            log("Entering chat, type anything to send "
+                                "message, use name:your_name to set nickname, "
+                                "and room:leave to go back to lobby"),
                             chat(ChatSocket)
                     end;
                 ["room", "list"] ->
@@ -82,8 +85,7 @@ chat(Socket) ->
             case strip_tokens(Content, ":") of
                 ["leave", "room"] ->
                     log("Room left, going back to lobby"),
-                    gen_tcp:close(Socket),
-                    lobby(connect());
+                    gen_tcp:close(Socket);
                 ["name", Name] ->
                     send(Socket, "name:" ++ Name),
                     chat(Socket);
@@ -96,14 +98,16 @@ chat(Socket) ->
             chat(Socket);
         {tcp_closed, ClosedSocket} ->
             if Socket =:= ClosedSocket ->
-                   log("Connection to room closed, leaving channel");
+                   log("Connection to room closed, going back "
+                       "to lobby");
                true -> chat(Socket)
             end;
         Message ->
             log("Chat received unrecognized client message ~w",
                 [Message]),
             chat(Socket)
-    end.
+    end,
+    lobby(connect()).
 
 connect() ->
     ServerHost = store:take(host),

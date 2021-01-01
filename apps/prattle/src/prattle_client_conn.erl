@@ -66,5 +66,5 @@ send_message(To, String, Vars) ->
 send_system_message(To, String, Vars) ->
     gen_tcp:send(To,
                  list_to_binary(io_lib:format(prattle_utils:system_message(String)
-                                                  + "~n",
+                                                  ++ "~n",
                                               Vars))).
