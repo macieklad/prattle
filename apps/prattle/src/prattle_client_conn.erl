@@ -10,18 +10,24 @@ spawn(RoomName, RoomPid, ListenSocket) ->
                [RoomName, RoomPid, ListenSocket]).
 
 client(RoomName, RoomPid, ListenSocket) ->
-    {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
-    log("Client connection received", RoomName),
-    gen_server:cast(RoomPid, {client_connection, self()}),
-    send_system_message(AcceptSocket,
-                        "Welcome to room: ~w",
-                        [RoomName]),
-    gen_tcp:controlling_process(AcceptSocket, self()),
-    gen_server:cast(RoomPid, spawn_client),
-    client_loop(pid_to_list(self()),
-                AcceptSocket,
-                RoomName,
-                RoomPid).
+    Conn = gen_tcp:accept(ListenSocket),
+    case Conn of
+        {ok, AcceptSocket} ->
+            log("Client connection received", RoomName),
+            gen_server:cast(RoomPid, {client_connection, self()}),
+            send_system_message(AcceptSocket,
+                                "Welcome to room: ~w",
+                                [RoomName]),
+            gen_tcp:controlling_process(AcceptSocket, self()),
+            gen_server:cast(RoomPid, spawn_client),
+            client_loop(pid_to_list(self()),
+                        AcceptSocket,
+                        RoomName,
+                        RoomPid);
+        _Else ->
+            log("Client listener didn't accept, closing", RoomName),
+            ok
+    end.
 
 client_loop(Name, Socket, RoomName, RoomPid) ->
     receive
@@ -62,5 +68,4 @@ send_system_message(To, String, Vars) ->
                  list_to_binary(io_lib:format(system_message(String),
                                               Vars))).
 
-system_message(Message) ->
-    "<<prattle>> " ++ Message ++ "~n".
+system_message(Message) -> "<<prattle>> " ++ Message.

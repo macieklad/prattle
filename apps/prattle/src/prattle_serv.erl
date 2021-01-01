@@ -8,7 +8,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, stop/1]).
+-export([start_link/0]).
 
 -export([code_change/3,
          handle_call/3,
@@ -21,19 +21,19 @@
 
 -record(state, {socket}).
 
-start_link(ListenSocket) ->
+start_link() ->
     io:format("[SERVER] starting prattle~n"),
+    {ok, ServerSocket} = gen_tcp:listen(8000,
+                                        [{active, true}, binary]),
     {ok, Serv} = gen_server:start_link({local, ?MODULE},
                                        ?MODULE,
-                                       [ListenSocket],
+                                       [ServerSocket],
                                        []),
     gen_server:cast(Serv, listen),
     {ok, Serv}.
 
 init([ListenSocket]) ->
     {ok, #state{socket = ListenSocket}}.
-
-stop(_Args) -> gen_server:call(self(), stop).
 
 handle_call({room_port, Room}, _From, State) ->
     Port = room_port(Room),

@@ -5,20 +5,22 @@
 -export([put/2, run/1, take/1]).
 
 start(StateList) ->
-    register(store,
-             spawn_link(?MODULE, run, [dict:from_list(StateList)])).
+    Pid = spawn_link(store,
+                     run,
+                     [dict:from_list(StateList)]),
+    register(store_instance, Pid).
 
 run(State) ->
     receive
         {take, Key, Process} ->
-            Process ! {return, dict:fetch(State, Key)};
-        {store, {Key, Value}} ->
+            Process ! {return, dict:fetch(Key, State)};
+        {put, {Key, Value}} ->
             run(dict:store(Key, Value, State))
     end,
     run(State).
 
 take(Key) ->
-    store ! {take, Key, self()},
+    store_instance ! {take, Key, self()},
     receive {return, Value} -> Value end.
 
-put(Key, Value) -> store ! {store, {Key, Value}}.
+put(Key, Value) -> store_instance ! {put, {Key, Value}}.
