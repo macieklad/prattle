@@ -1,9 +1,11 @@
 
 # Prattle
 
-TCP server with client implementation made for fun to learn Erlang. Server is an OTP application, whereas client is pure erlang module.
+TCP server with client implementation made for fun to learn Erlang. Server is an OTP application, whereas client is pure erlang module. This app was written as part of 2020 parallel programming AGH university course.
 
-- [Prattle](#prattle)
+If you want to jump straight to the source code, please see app architecture section first.
+
+- [Table of contents](#prattle)
   * [Requirements](#requirements)
   * [Build](#build)
   * [Running the app](#running-the-app)
@@ -66,6 +68,16 @@ After you join the chat room, you have another 2 commands to use:
 
 Any other input will be treated as a message, and it will be sent to all connected clients.
 
+## OTP explanation
+If you are not familiar with erlang Open Telecom Platform, server code may not be clear to you. This section will try to help with that. 
+
+In terms of this app all you need to know is:
+
+Modules may implement supervisor or gen_server behaviour. 
+- Supervisors are simple - they will read their ChildSpec and prepare processes for us instead of doing it manually. If "worker" proccesses fail, they will be restarted, or proper crash report will be sent to the shell.  
+- You can think of gen_servers as HTTP servers, instead of writing receive loops, we are defining methods which our modules(servers) handle, and then they can be called from another place. Calls are synchronous, casts are asynchronous, and are triggered with gen_server:call and cast functions. When there is classic erlang message incoming, gen_server will call handle_info with message params.
+- under the hood, gen_servers use standard receive loop on steroids, calls, casts, infos and other methods are just abstractions that make the code cleaner and less recursive. 
+
 ## App architecture
 Simplified visualization, see longer explanation below.
 ![App architecture](static/architecture.png?raw=true)
@@ -77,4 +89,9 @@ Simplified visualization, see longer explanation below.
 5. If message is sent from the client, connection proccess will send it to the room proccess, and it will send broadcast message to all of its active connections, which will in turn send it back to the connected clients, and the message will be shown. 
 5. If the client requests room leave, client connection will be destroyed, and client will connect to server once again. If the client was the last one, and the room is empty, it will terminate.
 
-All of this actions will be logged to the server console. Feel free to explore the code and its comments for more explanations.
+All actions will be logged to the server console. Feel free to explore the code and its comments for more explanations. In terms of files, I recommend the following order:
+
+- supervisors and other init code
+- prattle_server / prattle_client + prattle_store
+- prattle_room
+- prattle_client_connection
