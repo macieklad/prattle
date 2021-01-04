@@ -47,9 +47,9 @@ To run server:
 
 Client and server run on your local host, on port 8000, make sure it is free. If you need to use another one, use the following commands instead.
 
-    > prattle_client:start({{127,0,0,1}, 9000}) # Replace IP address and port as needed
+    > prattle_client:start({{127,0,0,1}, 9000}). # Replace IP address and port as needed
 
-    > prattle_app:start({9000}) # Server always listens on localhost, you can only customize the port. 
+    > prattle_app:start({9000}). # Server always listens on localhost, you can only customize the port. 
 
 
 ## Using the client
